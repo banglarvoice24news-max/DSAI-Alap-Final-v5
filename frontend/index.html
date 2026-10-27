@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="dsaialap — hybrid E2EE communication: Cloud, off-grid Mesh, and SIM fallback." />
+    <title>dsaialap</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+        background: radial-gradient(1200px 600px at 70% -10%, #0a2a33 0%, #05070c 55%) #05070c;
+        color: #e8fbff;
+        min-height: 100vh;
+      }
+      .wrap { max-width: 860px; margin: 0 auto; padding: 64px 24px; text-align: center; }
+      .badge {
+        display: inline-block; padding: 6px 14px; border-radius: 999px; font-size: 12px;
+        letter-spacing: 1.5px; color: #7cff6b;
+        border: 1px solid rgba(124,255,107,.4); background: rgba(124,255,107,.08);
+      }
+      h1 { font-size: clamp(40px, 8vw, 72px); margin: 28px 0 8px; font-weight: 800; letter-spacing: 2px; }
+      h1 span { color: #00f0ff; }
+      p.lead { color: #9fb6c4; font-size: 18px; max-width: 560px; margin: 16px auto 36px; line-height: 1.6; }
+      .card {
+        background: rgba(20,28,40,.55); border: 1px solid rgba(255,255,255,.14);
+        border-radius: 22px; padding: 26px; backdrop-filter: blur(18px);
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin: 28px 0;
+      }
+      .feature h3 { margin: 6px 0; color: #00f0ff; letter-spacing: .5px; }
+      .feature p { margin: 0; color: #8ba3b3; font-size: 14px; line-height: 1.5; }
+      .actions { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+      a.btn {
+        text-decoration: none; display: inline-block; padding: 14px 26px; border-radius: 14px;
+        font-weight: 700; letter-spacing: .4px; cursor: pointer;
+      }
+      a.btn-primary { background: #00f0ff; color: #041018; }
+      a.btn-ghost { border: 1px solid #2b3b4d; color: #e8fbff; }
+      footer { margin-top: 48px; color: #556a78; font-size: 13px; }
+      code { color: #7cff6b; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <span class="badge">E2EE &middot; OFF-GRID MESH &middot; SIM FALLBACK</span>
+      <h1>dsai<span>alap</span></h1>
+      <p class="lead">
+        Encrypted cloud messaging, 200m peer-to-peer Mesh calling, and Smart GSM/VoIP fallback — one
+        connection engine that never drops you.
+      </p>
+      <div class="card">
+        <div class="feature"><h3>Cloud Hub</h3><p>E2EE chat &amp; VoIP with OLed-neon UI and live presence.</p></div>
+        <div class="feature"><h3>Mesh Radar</h3><p>BLE / Wi-Fi Direct peers within 200m with RSSI strength.</p></div>
+        <div class="feature"><h3>Smart Dialer</h3><p>SIM &rarr; VoIP &rarr; Mesh routing with automatic fallback.</p></div>
+      </div>
+      <div class="actions">
+        <a class="btn btn-primary" href="/b2b">Enterprise B2B Portal</a>
+        <a class="btn btn-ghost" href="https://dsaialap.banglarvoice24news.com/health">Backend Status</a>
+      </div>
+      <footer>B2B header <code>x-dsaialap-key</code> &middot; API at <code>https://dsaialap.banglarvoice24news.com</code></footer>
+    </div>
+  </body>
+</html>

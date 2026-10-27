@@ -1,0 +1,9 @@
+# Trivy vulnerability waivers.
+#
+# Policy: a vulnerability ID may be listed here ONLY together with an owner,
+# a justification comment, and a review date. Anything not listed here fails
+# CI when its severity is CRITICAL.
+#
+# Format: one vulnerability ID per line (e.g. CVE-2024-12345).
+#
+# Currently there are no waivers.

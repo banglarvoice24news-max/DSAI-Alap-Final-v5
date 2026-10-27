@@ -1,0 +1,40 @@
+node_modules
+dist
+coverage
+
+# Never ship secrets or local env files into a build context
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
+secrets
+*.secrets
+
+# Tests and tooling are not part of the runtime image (CI runs them first)
+**/*.test.ts
+**/*.spec.ts
+jest.config.js
+jest.config.cjs
+jest.config.mjs
+jest.setup.js
+jest.setup.ts
+.eslintrc*
+.prettierrc*
+tsconfig.tsbuildinfo
+
+# Local / VCS / editor noise
+.git
+.gitignore
+.github
+*.log
+.DS_Store
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+*.md
+nginx
+scripts

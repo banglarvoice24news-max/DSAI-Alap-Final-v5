@@ -1,0 +1,275 @@
+# =============================================================================
+# Nexus Comm - PRODUCTION stack for a single VPS (Docker Compose v2).
+#
+# Frontend (static) is deployed separately on Vercel - it is intentionally NOT
+# part of this stack. This file runs the backend API + its stateful deps and an
+# nginx TLS terminator, all on one host.
+#
+# Usage on the VPS:
+#   1. Copy this repo (or just this file + nginx/) to the deploy directory.
+#   2. Create `.env` from `.env.example` and fill in every CHANGE_ME_* value.
+#   3. docker compose --env-file .env -f docker-compose.prod.yml pull
+#   4. docker compose --env-file .env -f docker-compose.prod.yml up -d
+#
+# All images are pinned by digest. `BACKEND_IMAGE` / `BACKEND_MIGRATE_IMAGE` are
+# written by the deploy workflow from immutable GHCR digests - never `latest`.
+#
+# TLS: nginx terminates TLS with Let's Encrypt certs issued/rewound by the
+# `certbot` service (webroot). First issuance needs a one-time bootstrap - see
+# DEPLOY.md. Alternatively terminate TLS at an upstream proxy/CDN (e.g.
+# Cloudflare) and drop the nginx+certbot services.
+# =============================================================================
+name: nexus-backend
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  # One-shot schema migration. Runs to completion before the API starts.
+  # Uses the dedicated `migrate` build target (has the Prisma CLI), so the
+  # runtime image stays free of dev dependencies.
+  migrate:
+    image: ${BACKEND_MIGRATE_IMAGE:?set BACKEND_MIGRATE_IMAGE in .env}
+    restart: "no"
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:?}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:?}?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - nexus
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+  api:
+    image: ${BACKEND_IMAGE:?set BACKEND_IMAGE in .env}
+    restart: unless-stopped
+    init: true
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "3001"
+      NODE_OPTIONS: --max-old-space-size=180
+      DATABASE_URL: postgresql://${POSTGRES_USER:?}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:?}?schema=public
+      REDIS_URL: redis://:${REDIS_PASSWORD:?}@redis:6379
+    expose:
+      - "3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - nexus
+    # The app writes nothing to disk; run the rootfs read-only with a tmpfs for
+    # scratch space. If a future feature needs persistent writes, add a volume.
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 25s
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "0.8"
+          memory: 256M
+        reservations:
+          memory: 96M
+
+  # TLS termination + reverse proxy to the API.
+  nginx:
+    image: nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - certbot-www:/var/www/certbot:ro
+    command: "/bin/sh -c \"(while :; do sleep 21600; nginx -s reload 2>/dev/null || true; done) & exec nginx -g 'daemon off;'\""
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - nexus
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 64M
+
+  # Let's Encrypt renewal loop (webroot). See DEPLOY.md for first issuance.
+  certbot:
+    image: certbot/certbot:latest
+    restart: unless-stopped
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt
+      - certbot-www:/var/www/certbot
+    entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 43200; done"
+    networks:
+      - nexus
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 64M
+
+  postgres:
+    image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: ${POSTGRES_DB:?}
+      # Match the single-VPS budget; tune upward if the host allows.
+      PGDATA: /var/lib/postgresql/data/pgdata
+    command:
+      - postgres
+      - -c
+      - shared_buffers=32MB
+      - -c
+      - max_connections=40
+      - -c
+      - work_mem=1MB
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - nexus
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 384M
+
+  redis:
+    image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+    restart: unless-stopped
+    # REDIS_PASSWORD is required (fail fast if unset) so Redis is never open.
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --requirepass
+      - ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+      - --maxmemory
+      - 24mb
+      - --maxmemory-policy
+      - allkeys-lru
+    volumes:
+      - redisdata:/data
+    networks:
+      - nexus
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?}
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 64M
+
+  # Logical backup of PostgreSQL into a named volume. Scheduled by the operator
+  # (host cron), NOT running continuously - hence the `backup` profile:
+  #   docker compose --profile backup run --rm backup
+  # Restore:
+  #   gunzip -c /var/lib/docker/volumes/nexus-backend_backups/_data/<file>.sql.gz \
+  #     | docker compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+  backup:
+    image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+    profiles: ["backup"]
+    restart: "no"
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?}
+      PGUSER: ${POSTGRES_USER:?}
+      PGDATABASE: ${POSTGRES_DB:?}
+      PGHOST: postgres
+    volumes:
+      - backups:/backups
+    entrypoint: >
+      /bin/sh -c 'set -e;
+      ts=$$(date -u +%Y%m%dT%H%M%SZ);
+      pg_dump --no-owner --format=plain | gzip -9 > /backups/nexus_$$ts.sql.gz;
+      echo "wrote /backups/nexus_$$ts.sql.gz";
+      ls -1t /backups/nexus_*.sql.gz | tail -n +15 | xargs -r rm -f;
+      echo "retained newest 14 backups"'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - nexus
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M
+
+volumes:
+  pgdata:
+  redisdata:
+  certbot-www:
+  backups:
+
+networks:
+  nexus:
+    driver: bridge

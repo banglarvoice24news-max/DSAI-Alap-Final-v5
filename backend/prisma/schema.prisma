@@ -1,0 +1,213 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Language {
+  en
+  bn
+}
+
+enum MessageStatus {
+  SENT
+  DELIVERED
+  READ
+}
+
+enum CallType {
+  AUDIO
+  VIDEO
+}
+
+enum CallState {
+  RINGING
+  ACTIVE
+  MISSED
+  REJECTED
+  ENDED
+}
+
+enum GatewayType {
+  MESH
+  VOIP
+  GSM
+  JASMIN
+  JAMBONZ
+}
+
+enum CdrDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum CdrStatus {
+  QUEUED
+  RINGING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  BUSY
+  NO_ANSWER
+  CANCELED
+}
+
+/// CPaaS API keys. Only the SHA-256 digest is stored; the raw key is shown once.
+model ApiKey {
+  id         String    @id @default(uuid()) @db.Uuid
+  name       String
+  keyPrefix  String    @map("key_prefix")
+  keyHash    String    @unique @map("key_hash")
+  revokedAt  DateTime? @map("revoked_at")
+  lastUsedAt DateTime? @map("last_used_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([keyPrefix])
+  @@map("api_keys")
+}
+
+/// Immutable §5 audit trail for call/sms legs across every gateway. Written once
+/// with createMany(skipDuplicates) and never updated in code; the unique callSid
+/// makes gateway event replays idempotent.
+model Cdr {
+  id           String       @id @default(uuid()) @db.Uuid
+  callSid      String       @unique @map("call_sid")
+  clientRef    String?      @map("client_ref")
+  direction    CdrDirection
+  fromNumber   String       @map("from_number")
+  toNumber     String       @map("to_number")
+  gatewayType  GatewayType  @map("gateway_type")
+  status       CdrStatus
+  consentFlag  Boolean      @default(false) @map("consent_flag")
+  durationSec  Int          @default(0) @map("duration_sec")
+  costMicros   Int          @default(0) @map("cost_micros")
+  meshHops     Int?         @map("mesh_hops")
+  bitrate      Int?         @map("bitrate")
+  jitterMs     Int?         @map("jitter_ms")
+  packetLossPct Float?      @map("packet_loss_pct")
+  createdAt    DateTime     @default(now()) @map("created_at")
+
+  @@index([fromNumber])
+  @@index([toNumber])
+  @@index([gatewayType, status])
+  @@index([createdAt])
+  @@map("cdrs")
+}
+
+model User {
+  id                 String    @id @default(uuid()) @db.Uuid
+  phoneNumber        String    @unique @map("phone_number")
+  publicKey          String    @map("public_key")
+  identityKey        String?   @map("identity_key")
+  signedPreKey       String?   @map("signed_pre_key")
+  signedPreKeySig    String?   @map("signed_pre_key_sig")
+  displayName        String?   @map("display_name")
+  avatarUrl          String?   @map("avatar_url")
+  about              String?
+  language           Language  @default(en)
+  fcmToken           String?   @map("fcm_token")
+  backupKeyHash      String?   @map("backup_key_hash")
+  backupKeySalt      String?   @map("backup_key_salt")
+  backupVerifier     String?   @map("backup_verifier")
+  lastSeenAt         DateTime? @map("last_seen_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  sessions           Session[]
+  sentMessages       Message[]          @relation("SentMessages")
+  receivedMessages   Message[]          @relation("ReceivedMessages")
+  oneTimePreKeys     OneTimePreKey[]
+  blockedBy          BlockedContact[]   @relation("Blocker")
+  blockedUsers       BlockedContact[]   @relation("Blocked")
+  outgoingCalls      Call[]             @relation("Caller")
+  incomingCalls      Call[]             @relation("Callee")
+
+  @@index([phoneNumber])
+  @@map("users")
+}
+
+model Session {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  refreshToken String   @unique @map("refresh_token")
+  deviceId     String   @map("device_id")
+  ip           String
+  userAgent    String?  @map("user_agent")
+  expiresAt    DateTime @map("expires_at")
+  revokedAt    DateTime? @map("revoked_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([deviceId])
+  @@map("sessions")
+}
+
+model Message {
+  id         String        @id @default(uuid()) @db.Uuid
+  senderId   String        @map("sender_id") @db.Uuid
+  receiverId String        @map("receiver_id") @db.Uuid
+  ciphertext String
+  nonce      String?
+  header     String?
+  status     MessageStatus @default(SENT)
+  createdAt  DateTime      @default(now()) @map("created_at")
+  deliveredAt DateTime?    @map("delivered_at")
+  readAt     DateTime?     @map("read_at")
+
+  sender   User @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@index([senderId, receiverId, createdAt])
+  @@index([receiverId, status])
+  @@map("messages")
+}
+
+model OneTimePreKey {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  keyId     Int      @map("key_id")
+  publicKey String   @map("public_key")
+  consumed  Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, keyId])
+  @@index([userId, consumed])
+  @@map("one_time_pre_keys")
+}
+
+model BlockedContact {
+  id        String   @id @default(uuid()) @db.Uuid
+  blockerId String   @map("blocker_id") @db.Uuid
+  blockedId String   @map("blocked_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  blocker User @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked User @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerId, blockedId])
+  @@map("blocked_contacts")
+}
+
+model Call {
+  id        String    @id @default(uuid()) @db.Uuid
+  callerId  String    @map("caller_id") @db.Uuid
+  calleeId  String    @map("callee_id") @db.Uuid
+  type      CallType
+  state     CallState @default(RINGING)
+  startedAt DateTime? @map("started_at")
+  endedAt   DateTime? @map("ended_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  caller User @relation("Caller", fields: [callerId], references: [id], onDelete: Cascade)
+  callee User @relation("Callee", fields: [calleeId], references: [id], onDelete: Cascade)
+
+  @@index([calleeId, state])
+  @@map("calls")
+}

@@ -1,0 +1,23 @@
+# Pre-commit hooks for local secret/Dockerfile hygiene.
+#
+#   pip install pre-commit        (or: pipx install pre-commit)
+#   pre-commit install            # wire into .git/hooks/pre-commit
+#   pre-commit run --all-files    # run manually once
+#
+# CI runs the same checks independently (see .github/workflows/backend-ci.yml),
+# so a missing local install is never the only line of defense.
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+        name: gitleaks (secret scan)
+        args: ["--config", ".gitleaks.toml", "--redact"]
+
+  - repo: local
+    hooks:
+      - id: hadolint
+        name: hadolint (backend Dockerfile)
+        language: system
+        entry: hadolint
+        files: ^backend/Dockerfile$

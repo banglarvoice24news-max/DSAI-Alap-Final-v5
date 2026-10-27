@@ -1,0 +1,8 @@
+# Copy this file to mobile/android/key.properties and fill in real values.
+# key.properties and the .jks are git-ignored and must never be committed.
+#
+# storeFile is resolved relative to mobile/android/app/, e.g. "upload-keystore.jks".
+storePassword=CHANGE_ME
+keyPassword=CHANGE_ME
+keyAlias=upload
+storeFile=upload-keystore.jks

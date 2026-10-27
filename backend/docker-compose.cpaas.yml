@@ -1,0 +1,59 @@
+# CPaaS media/gateway scaffold (optional layer)
+#
+# Runs the media and gateway components that the Nexus CPaaS layer talks to. The API container
+# itself stays on the main docker-compose.yml network; extend it with networks/external_networks
+# to join this one, or reach these services over host networking.
+#
+# WARNING: image tags are placeholders. Verify and pin each image from the upstream project's own
+# release notes before first use (FreeSWITCH 1.11.x, jambonz 0.x self-hosted, Jasmin 0.10.x). The
+# API reads all of these via env vars; see backend/.env.example under the CPaaS block.
+
+services:
+  # Dedicated Redis so CPaaS pubsub/rate-limit keys never collide with the app Redis.
+  redis:
+    image: ${CPAAS_REDIS_IMAGE:-redis:7-alpine}
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - cpaas-redis:/data
+    networks: [cpaas]
+
+  # FreeSWITCH with mod_esl enabled (inbound ESL on 8021) + the cpaas-gsm dialplan/context.
+  freeswitch:
+    image: ${FS_IMAGE:?set FS_IMAGE to a FreeSWITCH 1.11 image (e.g. your registry/freeswitch:1.11)}
+    restart: unless-stopped
+    environment:
+      FS_ESL_PASSWORD: ${FS_ESL_PASSWORD:?required for the ESL client}
+    ports:
+      - "${FS_ESL_PORT:-8021}:8021"   # mod_esl (inbound)
+      - "5060:5060/udp"               # SIP signalling
+      - "5060:5060/tcp"
+      - "16384-32768:16384-32768/udp" # RTP
+    volumes:
+      - ./cpaas-conf:/etc/freeswitch  # mount your freeswitch.xml/dialplan/gateway xml here
+    networks: [cpaas]
+
+  # Licensed voice termination (jambonz BYOC) - only needed if you route voice via jambonz.
+  jambonz:
+    image: ${JAMBONZ_IMAGE:?set JAMBONZ_IMAGE to a jambonz 0.x image from the jambonz project}
+    restart: unless-stopped
+    environment:
+      ACCOUNT_SID: ${JAMBONZ_ACCOUNT_SID:-}
+      API_TOKEN: ${JAMBONZ_API_TOKEN:-}
+      WEBHOOK_SECRET: ${JAMBONZ_WEBHOOK_SECRET:-}
+    networks: [cpaas]
+
+  # Licensed SMS gateway (Jasmin SMPP/HTTP) - only needed if you route SMS via Jasmin.
+  jasmin:
+    image: ${JASMIN_IMAGE:?set JASMIN_IMAGE to a Jasmin 0.10.x image from the Jasmin project}
+    restart: unless-stopped
+    ports:
+      - "${JASMIN_HTTP_PORT:-1401}:1401"  # HTTP API used by the backend
+      - "${JASMIN_SMPP_PORT:-2775}:2775"  # SMPP
+    networks: [cpaas]
+
+volumes:
+  cpaas-redis:
+
+networks:
+  cpaas:

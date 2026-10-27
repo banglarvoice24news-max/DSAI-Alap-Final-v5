@@ -1,0 +1,21 @@
+# Nexus Comm — gitleaks configuration.
+# https://github.com/gitleaks/gitleaks
+title = "Nexus Comm allowlist for intentional placeholders and documentation"
+
+[[allowlists]]
+description = "Documentation, environment templates, and intentional placeholder secrets"
+condition = "OR"
+paths = [
+  '''^\.env\.example$''',
+  '''^DEPLOY\.md$''',
+  '''^README\.md$''',
+  '''^backend/\.env\.example$''',
+]
+regexes = [
+  '''CHANGE_ME''',
+  '''change-me''',
+  '''dummy_''',
+  '''example\.invalid''',
+  '''placeholder''',
+  '''test-.*-secret''',
+]
