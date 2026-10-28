@@ -1,4 +1,0 @@
-# Temporary compatibility pin for the current Flutter CI toolchain.
-dependency_overrides:
-  sqflite_sqlcipher: 3.0.0
-  package_info_plus: 8.3.1
