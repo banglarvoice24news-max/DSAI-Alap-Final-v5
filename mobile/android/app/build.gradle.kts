@@ -25,7 +25,7 @@ val buildingRelease = gradle.startParameter.taskNames.any {
 
 android {
     namespace = "com.nexus.comm"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 35
     ndkVersion = "28.2.13676358"
 
     compileOptions {
@@ -40,7 +40,7 @@ android {
     defaultConfig {
         applicationId = "com.nexus.comm"
         minSdk = 24
-        targetSdk = flutter.targetSdkVersion
+        targetSdk = 35
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
